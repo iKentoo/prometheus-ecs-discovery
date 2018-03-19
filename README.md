@@ -17,6 +17,9 @@ The command line parameters that can be used are:
   exiting (0 = infinite)
 * -config.write-to (string): path of file to write ECS service
   discovery information to (default "ecs_file_sd.yml")
+* -config.service-list (string): command seperated list of services
+  to include. If left blank it will be ALL services. Docker label
+  PROMETHEUS_EXPORTER_PORT still needs to be defined.
 
 ## Usage
 

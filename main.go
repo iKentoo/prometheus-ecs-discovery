@@ -21,6 +21,7 @@ import (
 	"log"
 	"strconv"
 	"time"
+	"strings"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -31,6 +32,7 @@ import (
 var outFile = flag.String("config.write-to", "ecs_file_sd.yml", "path of file to write ECS service discovery information to")
 var interval = flag.Duration("config.scrape-interval", 60*time.Second, "interval at which to scrape the AWS API for ECS service discovery information")
 var times = flag.Int("config.scrape-times", 0, "how many times to scrape before exiting (0 = infinite)")
+var argServiceList = flag.String("config.service-list", "", "comma seperated list of ECS services to filter on")
 
 // logError is a convenience function that decodes all possible ECS
 // errors and displays them to standard error.
@@ -399,7 +401,27 @@ func GetTasksOfClusters(svc *ecs.ECS, svcec2 *ec2.EC2, clusterArns []*string) ([
 					if len(descOutput.Failures) > 0 {
 						log.Printf("Described %d failures in cluster %s", len(descOutput.Failures), *clusterArn)
 					}
-					finalOutput.Tasks = append(finalOutput.Tasks, descOutput.Tasks...)
+
+					enhancedServiceList := []string{}
+					if (len(*argServiceList) > 0) {
+						// split the list and reformat the list
+						serviceList := strings.Split(*argServiceList, ",")
+						for _, esl := range serviceList {
+							enhancedServiceList = append(enhancedServiceList, "service:"+strings.TrimSpace(esl))
+						}
+
+						for _, element := range descOutput.Tasks {
+							if contains(enhancedServiceList, *element.Group) {
+								log.Printf("adding to list %s", *element.Group)
+								finalOutput.Tasks = append(finalOutput.Tasks, element)
+							} else {
+								log.Printf("ignoring service %s not contained in include filter: %s", *element.Group, *argServiceList)
+							}
+						}
+					} else {
+						finalOutput.Tasks = append(finalOutput.Tasks, descOutput.Tasks...)
+					}
+
 					finalOutput.Failures = append(finalOutput.Failures, descOutput.Failures...)
 					if output.NextToken == nil {
 						break
@@ -432,6 +454,16 @@ func GetTasksOfClusters(svc *ecs.ECS, svcec2 *ec2.EC2, clusterArns []*string) ([
 	}
 
 	return tasks, nil
+}
+
+func contains(slice []string, item string) bool {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+
+	_, ok := set[item]
+	return ok
 }
 
 // GetAugmentedTasks gets the fully AugmentedTasks running on
